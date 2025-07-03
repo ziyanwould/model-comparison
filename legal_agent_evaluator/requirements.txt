@@ -1,0 +1,11 @@
+# Backend
+fastapi
+uvicorn[standard]
+
+# Frontend
+streamlit
+requests
+
+# Data & Visualization
+pandas
+plotly
