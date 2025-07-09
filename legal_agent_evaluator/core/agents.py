@@ -7,11 +7,10 @@ import openai # For GeneralLLMAgent
 import os
 
 # --- Constants for API access (Defaults) ---
-# For GeneralLLMAgent (OpenAI via Proxy)
 DEFAULT_OPENAI_API_KEY = "sk-STEgVqMtrgBghNJKqrzDsmKC7veRoRJAJfqAwPc4XwoGM0JC"
 DEFAULT_OPENAI_BASE_URL = "https://expose.drawaspark.com/v1"
+DEFAULT_OPENAI_MODEL_NAME = "gpt-4o-mini" # Updated default model
 
-# For FineTunedAgent ("好的智能体" API)
 DEFAULT_GOOD_AGENT_API_URL = "https://fastai.gxzgt.com:3000/api/v1/chat/completions"
 DEFAULT_GOOD_AGENT_TOKEN = "fastgpt-fEtaxAzubhd8ZRQBftG7njT7Q9RxLQ2lFwLsnaoEWDA6rEM7hnMhBn5Ia4nH"
 
@@ -26,27 +25,28 @@ class BaseAgent:
 
 class GeneralLLMAgent(BaseAgent):
     """模拟通用大模型智能体 (调用OpenAI API)"""
-    def __init__(self, name="通用大模型（OpenAI API）", api_key: str = None, base_url: str = None):
+    def __init__(self, name="通用大模型（OpenAI API）", api_key: str = None, base_url: str = None, model_name: str = None):
         super().__init__(name)
         self_api_key = api_key if api_key else DEFAULT_OPENAI_API_KEY
         self_base_url = base_url if base_url else DEFAULT_OPENAI_BASE_URL
+        self.model_name = model_name if model_name else DEFAULT_OPENAI_MODEL_NAME
 
         if not self_api_key:
             raise ValueError("OpenAI API key must be provided either as a parameter or as a default.")
+        if not self.model_name: # Should always have a default from above
+            raise ValueError("OpenAI Model Name must be provided either as a parameter or as a default.")
 
         self.client = openai.OpenAI(
             api_key=self_api_key,
             base_url=self_base_url,
         )
-        print(f"[GeneralLLMAgent] Initialized with Base URL: {self_base_url}, Key: {'Provided' if api_key else 'Default'}")
+        print(f"[GeneralLLMAgent] Initialized with Base URL: {self_base_url}, Model: {self.model_name}, Key: {'Provided' if api_key else 'Default'}")
 
     def run(self, query: str) -> str:
         try:
             start_time = time.time()
-            # Ensure client is using the potentially updated base_url if it was re-init
-            # For openai client, base_url is set at init, so it's fine.
             stream = self.client.chat.completions.create(
-                model="gpt-3.5-turbo",
+                model=self.model_name, # Use the instance's model_name
                 messages=[
                     {"role": "system", "content": "You are a general helpful assistant."},
                     {"role": "user", "content": query}
@@ -85,6 +85,8 @@ class GeneralLLMAgent(BaseAgent):
 
 class FineTunedAgent(BaseAgent):
     """模拟经过法律数据微调的智能体 (调用“好的智能体”API)"""
+    # This agent's API does not currently support a model_name parameter in its payload,
+    # so we don't add model_name to its __init__ for now.
     def __init__(self, name="微调后模型（特定API）", api_url: str = None, token: str = None):
         super().__init__(name)
         self.api_url = api_url if api_url else DEFAULT_GOOD_AGENT_API_URL
@@ -119,8 +121,8 @@ class FineTunedAgent(BaseAgent):
         try:
             start_time = time.time()
             response = requests.post(
-                self.api_url, # Uses the potentially updated self.api_url
-                headers=self.headers, # Uses the potentially updated self.headers (if token changed)
+                self.api_url,
+                headers=self.headers,
                 json=payload,
                 stream=True,
                 timeout=60

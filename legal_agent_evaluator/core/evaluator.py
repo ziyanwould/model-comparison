@@ -19,21 +19,18 @@ def evaluate_agent(agent, test_cases: list) -> list:
         query = case['query']
         ground_truth = case['ground_truth']
 
-        print(f"  Processing case {i+1}/{len(test_cases)}: ID {case['id']}, Query: '{query[:30]}...'")
+        # print(f"  Processing case {i+1}/{len(test_cases)}: ID {case['id']}, Query: '{query[:30]}...'")
         agent_response = agent.run(query)
 
         is_success = False
         if isinstance(ground_truth, dict):
             try:
-                # Ensure agent_response is valid JSON before trying to load
                 if isinstance(agent_response, str) and agent_response.strip().startswith("{") and agent_response.strip().endswith("}"):
                     agent_response_json = json.loads(agent_response)
                     is_success = agent_response_json == ground_truth
                 else:
-                    # print(f"    Agent response is not valid JSON for structured ground truth. Response: {agent_response}")
                     is_success = False
             except json.JSONDecodeError:
-                # print(f"    JSONDecodeError for agent response: {agent_response}")
                 is_success = False
         else:
             is_success = agent_response == ground_truth
@@ -47,7 +44,6 @@ def evaluate_agent(agent, test_cases: list) -> list:
             "is_success": is_success,
             "agent_name": agent.name
         })
-        # print(f"    Case {case['id']} processed. Success: {is_success}")
     print(f"Finished evaluation for agent: {agent.name}")
     return results
 
@@ -59,11 +55,13 @@ def run_evaluation(custom_configs: Optional[Dict] = None) -> list:
                            {
                                "general_agent": {
                                    "api_key": "user_key",
-                                   "base_url": "user_url"
+                                   "base_url": "user_url",
+                                   "model_name": "user_model"
                                },
                                "finetuned_agent": {
                                    "api_url": "user_api_url",
                                    "token": "user_token"
+                                   // model_name is not currently used by FineTunedAgent's API
                                }
                            }
     """
@@ -75,21 +73,19 @@ def run_evaluation(custom_configs: Optional[Dict] = None) -> list:
 
     test_cases = load_test_set("data/golden_test_set.jsonl")
 
-    # Initialize GeneralLLMAgent with custom config if provided
     general_agent_config = custom_configs.get("general_agent") if custom_configs else {}
-    if general_agent_config is None: general_agent_config = {} # Ensure it's a dict for unpacking
+    if general_agent_config is None: general_agent_config = {}
 
-    # print(f"Initializing GeneralLLMAgent with config: {general_agent_config}")
     general_agent = GeneralLLMAgent(
         api_key=general_agent_config.get("api_key"),
-        base_url=general_agent_config.get("base_url")
+        base_url=general_agent_config.get("base_url"),
+        model_name=general_agent_config.get("model_name") # Pass model_name
     )
 
-    # Initialize FineTunedAgent with custom config if provided
     finetuned_agent_config = custom_configs.get("finetuned_agent") if custom_configs else {}
-    if finetuned_agent_config is None: finetuned_agent_config = {} # Ensure it's a dict
+    if finetuned_agent_config is None: finetuned_agent_config = {}
 
-    # print(f"Initializing FineTunedAgent with config: {finetuned_agent_config}")
+    # FineTunedAgent currently doesn't take model_name, so we don't pass it.
     finetuned_agent = FineTunedAgent(
         api_url=finetuned_agent_config.get("api_url"),
         token=finetuned_agent_config.get("token")
@@ -97,7 +93,6 @@ def run_evaluation(custom_configs: Optional[Dict] = None) -> list:
 
     all_results = []
 
-    # Evaluate GeneralLLMAgent
     general_agent_results = evaluate_agent(general_agent, test_cases)
     for res in general_agent_results:
         all_results.append({
@@ -110,7 +105,6 @@ def run_evaluation(custom_configs: Optional[Dict] = None) -> list:
             "智能体": res['agent_name']
         })
 
-    # Evaluate FineTunedAgent
     finetuned_agent_results = evaluate_agent(finetuned_agent, test_cases)
     for res in finetuned_agent_results:
         all_results.append({
