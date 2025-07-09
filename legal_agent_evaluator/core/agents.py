@@ -46,11 +46,7 @@ class GeneralLLMAgent(BaseAgent):
             # Ensure client is using the potentially updated base_url if it was re-init
             # For openai client, base_url is set at init, so it's fine.
             stream = self.client.chat.completions.create(
-<<<<<<< HEAD
-                model="gpt-4o-mini", # Or any other model available via your proxy
-=======
                 model="gpt-3.5-turbo",
->>>>>>> 4299d0e50b4a5b51d9e9a519f1e2f018f6e3dfd3
                 messages=[
                     {"role": "system", "content": "You are a general helpful assistant."},
                     {"role": "user", "content": query}
