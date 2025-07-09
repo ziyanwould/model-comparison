@@ -5,6 +5,10 @@ import pandas as pd
 import plotly.express as px
 import json
 
+# This threshold is defined in core/evaluator.py.
+# For display purposes here, we define it again. Ideally, this could come from a config or API.
+SIMILARITY_THRESHOLD = 0.7
+
 st.set_page_config(
     page_title="法律智能体评测仪表盘",
     page_icon="⚖️",
