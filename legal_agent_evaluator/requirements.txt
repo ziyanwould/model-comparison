@@ -9,3 +9,6 @@ requests
 # Data & Visualization
 pandas
 plotly
+
+# OpenAI API
+openai
