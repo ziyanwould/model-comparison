@@ -1,33 +1,73 @@
 # main_api.py
-from fastapi import FastAPI
-from core.evaluator import run_evaluation
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel, Field
+from typing import Optional, Dict
+
 # 确保在 legal_agent_evaluator 目录下运行时，可以正确导入
-# 如果使用 python -m legal_agent_evaluator.main_api 这样的方式运行，可能需要调整导入路径
+from core.evaluator import run_evaluation
 
 app = FastAPI(
     title="法律智能体评测API",
     description="一个用于评测法律领域智能体表现的API。",
-    version="0.1.0"
+    version="0.2.0" # Version updated for new features
 )
 
-@app.post("/evaluate", summary="执行智能体评测", description="运行预定义的测试用例，对比不同智能体的表现。")
-async def evaluate_agents_endpoint():
+# --- Pydantic Models for Request Body ---
+class AgentApiConfig(BaseModel):
+    api_key: Optional[str] = None
+    base_url: Optional[str] = None # For OpenAI-like agents
+    api_url: Optional[str] = None  # For other custom URL based agents
+    token: Optional[str] = None    # For token-based auth
+
+class CustomConfigs(BaseModel):
+    general_agent: Optional[AgentApiConfig] = None
+    finetuned_agent: Optional[AgentApiConfig] = None
+
+class EvaluateRequest(BaseModel):
+    custom_configs: Optional[CustomConfigs] = None
+
+@app.post("/evaluate", summary="执行智能体评测", description="运行预定义的测试用例，对比不同智能体的表现。可以提供自定义的API配置。")
+async def evaluate_agents_endpoint(request_data: EvaluateRequest = EvaluateRequest()):
     """
     触发对配置好的智能体进行评测。
     评测流程包括：
     1. 加载 `data/golden_test_set.jsonl` 中的测试用例。
     2. 依次运行通用大模型和法律微调模型。
+       - 如果在请求中提供了 `custom_configs`，则会使用用户指定的API端点和密钥。
+       - 否则，使用在 `core/agents.py` 中定义的默认配置。
     3. 对比模型输出与标准答案，判断是否成功。
     4. 返回详细的评测结果列表。
-    """
-    results = run_evaluation()
-    return results
 
-# 如果希望直接运行此文件进行测试 (uvicorn main_api:app --reload)
-# 需要确保 core 和 data 目录与 main_api.py 在同一查找路径下
-# 通常将 legal_agent_evaluator 设为工作目录即可
-# 例如: cd legal_agent_evaluator && uvicorn main_api:app --reload
-# 或者，如果 legal_agent_evaluator 是一个包，并且你在其父目录:
-# python -m uvicorn legal_agent_evaluator.main_api:app --reload
-# (这种情况下，core.evaluator 的导入需要改为 from .core.evaluator import run_evaluation)
-# 为了简单起见，并假设直接在 legal_agent_evaluator 目录下运行，保持 from core.evaluator import run_evaluation
+    请求体示例 (可选):
+    ```json
+    {
+        "custom_configs": {
+            "general_agent": {
+                "api_key": "user_openai_key_here",
+                "base_url": "user_openai_base_url_here"
+            },
+            "finetuned_agent": {
+                "api_url": "user_custom_agent_api_url_here",
+                "token": "user_custom_agent_token_here"
+            }
+        }
+    }
+    ```
+    """
+    custom_configs_dict = None
+    if request_data and request_data.custom_configs:
+        custom_configs_dict = request_data.custom_configs.model_dump(exclude_none=True) # Use .model_dump() for Pydantic v2+
+        # print(f"Received custom_configs: {custom_configs_dict}") # For debugging
+
+    try:
+        results = run_evaluation(custom_configs=custom_configs_dict)
+        return results
+    except ValueError as ve: # Catch ValueErrors from agent initialization (e.g., missing keys)
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        # Log the exception here if you have a logger configured
+        # logger.error(f"Error during evaluation: {e}", exc_info=True)
+        print(f"Error during evaluation: {e}") # Simple print for now
+        raise HTTPException(status_code=500, detail=f"评测过程中发生内部错误: {str(e)}")
+
+# To run: cd legal_agent_evaluator && uvicorn main_api:app --reload

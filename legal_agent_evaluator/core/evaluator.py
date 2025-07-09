@@ -1,5 +1,6 @@
 # core/evaluator.py
 import json
+from typing import List, Dict, Optional
 from .agents import GeneralLLMAgent, FineTunedAgent
 
 def load_test_set(file_path: str) -> list:
@@ -13,20 +14,26 @@ def load_test_set(file_path: str) -> list:
 def evaluate_agent(agent, test_cases: list) -> list:
     """评测单个智能体"""
     results = []
-    for case in test_cases:
+    print(f"Starting evaluation for agent: {agent.name}")
+    for i, case in enumerate(test_cases):
         query = case['query']
         ground_truth = case['ground_truth']
 
+        print(f"  Processing case {i+1}/{len(test_cases)}: ID {case['id']}, Query: '{query[:30]}...'")
         agent_response = agent.run(query)
 
         is_success = False
-        # 简单的基于完全匹配的成功判断 (实际场景可能需要更复杂的匹配逻辑)
-        # 特别注意JSON对象的比较
         if isinstance(ground_truth, dict):
             try:
-                agent_response_json = json.loads(agent_response)
-                is_success = agent_response_json == ground_truth
+                # Ensure agent_response is valid JSON before trying to load
+                if isinstance(agent_response, str) and agent_response.strip().startswith("{") and agent_response.strip().endswith("}"):
+                    agent_response_json = json.loads(agent_response)
+                    is_success = agent_response_json == ground_truth
+                else:
+                    # print(f"    Agent response is not valid JSON for structured ground truth. Response: {agent_response}")
+                    is_success = False
             except json.JSONDecodeError:
+                # print(f"    JSONDecodeError for agent response: {agent_response}")
                 is_success = False
         else:
             is_success = agent_response == ground_truth
@@ -40,18 +47,57 @@ def evaluate_agent(agent, test_cases: list) -> list:
             "is_success": is_success,
             "agent_name": agent.name
         })
+        # print(f"    Case {case['id']} processed. Success: {is_success}")
+    print(f"Finished evaluation for agent: {agent.name}")
     return results
 
-def run_evaluation() -> list:
-    """运行所有评测"""
+def run_evaluation(custom_configs: Optional[Dict] = None) -> list:
+    """
+    运行所有评测。
+    :param custom_configs: 一个可选的字典，包含用户自定义的API配置。
+                           结构示例:
+                           {
+                               "general_agent": {
+                                   "api_key": "user_key",
+                                   "base_url": "user_url"
+                               },
+                               "finetuned_agent": {
+                                   "api_url": "user_api_url",
+                                   "token": "user_token"
+                               }
+                           }
+    """
+    print("Starting full evaluation run...")
+    if custom_configs:
+        print(f"Using custom configurations: {json.dumps(custom_configs, indent=2)}")
+    else:
+        print("No custom configurations provided, using defaults.")
+
     test_cases = load_test_set("data/golden_test_set.jsonl")
 
-    general_agent = GeneralLLMAgent(name="通用大模型")
-    finetuned_agent = FineTunedAgent(name="微调后模型")
+    # Initialize GeneralLLMAgent with custom config if provided
+    general_agent_config = custom_configs.get("general_agent") if custom_configs else {}
+    if general_agent_config is None: general_agent_config = {} # Ensure it's a dict for unpacking
+
+    # print(f"Initializing GeneralLLMAgent with config: {general_agent_config}")
+    general_agent = GeneralLLMAgent(
+        api_key=general_agent_config.get("api_key"),
+        base_url=general_agent_config.get("base_url")
+    )
+
+    # Initialize FineTunedAgent with custom config if provided
+    finetuned_agent_config = custom_configs.get("finetuned_agent") if custom_configs else {}
+    if finetuned_agent_config is None: finetuned_agent_config = {} # Ensure it's a dict
+
+    # print(f"Initializing FineTunedAgent with config: {finetuned_agent_config}")
+    finetuned_agent = FineTunedAgent(
+        api_url=finetuned_agent_config.get("api_url"),
+        token=finetuned_agent_config.get("token")
+    )
 
     all_results = []
 
-    # 评测通用大模型
+    # Evaluate GeneralLLMAgent
     general_agent_results = evaluate_agent(general_agent, test_cases)
     for res in general_agent_results:
         all_results.append({
@@ -64,7 +110,7 @@ def run_evaluation() -> list:
             "智能体": res['agent_name']
         })
 
-    # 评测微调后模型
+    # Evaluate FineTunedAgent
     finetuned_agent_results = evaluate_agent(finetuned_agent, test_cases)
     for res in finetuned_agent_results:
         all_results.append({
@@ -77,4 +123,5 @@ def run_evaluation() -> list:
             "智能体": res['agent_name']
         })
 
+    print("Full evaluation run completed.")
     return all_results

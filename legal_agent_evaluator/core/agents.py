@@ -6,14 +6,14 @@ import requests # For FineTunedAgent
 import openai # For GeneralLLMAgent
 import os
 
-# --- Constants for API access ---
+# --- Constants for API access (Defaults) ---
 # For GeneralLLMAgent (OpenAI via Proxy)
-OPENAI_API_KEY = "sk-STEgVqMtrgBghNJKqrzDsmKC7veRoRJAJfqAwPc4XwoGM0JC"
-OPENAI_BASE_URL = "https://expose.drawaspark.com/v1" # Assuming /v1 is needed
+DEFAULT_OPENAI_API_KEY = "sk-STEgVqMtrgBghNJKqrzDsmKC7veRoRJAJfqAwPc4XwoGM0JC"
+DEFAULT_OPENAI_BASE_URL = "https://expose.drawaspark.com/v1"
 
 # For FineTunedAgent ("好的智能体" API)
-GOOD_AGENT_API_URL = "https://fastai.gxzgt.com:3000/api/v1/chat/completions"
-GOOD_AGENT_TOKEN = "fastgpt-fEtaxAzubhd8ZRQBftG7njT7Q9RxLQ2lFwLsnaoEWDA6rEM7hnMhBn5Ia4nH"
+DEFAULT_GOOD_AGENT_API_URL = "https://fastai.gxzgt.com:3000/api/v1/chat/completions"
+DEFAULT_GOOD_AGENT_TOKEN = "fastgpt-fEtaxAzubhd8ZRQBftG7njT7Q9RxLQ2lFwLsnaoEWDA6rEM7hnMhBn5Ia4nH"
 
 
 class BaseAgent:
@@ -26,24 +26,33 @@ class BaseAgent:
 
 class GeneralLLMAgent(BaseAgent):
     """模拟通用大模型智能体 (调用OpenAI API)"""
-    def __init__(self, name="通用大模型（OpenAI API）"):
+    def __init__(self, name="通用大模型（OpenAI API）", api_key: str = None, base_url: str = None):
         super().__init__(name)
+        self_api_key = api_key if api_key else DEFAULT_OPENAI_API_KEY
+        self_base_url = base_url if base_url else DEFAULT_OPENAI_BASE_URL
+
+        if not self_api_key:
+            raise ValueError("OpenAI API key must be provided either as a parameter or as a default.")
+
         self.client = openai.OpenAI(
-            api_key=OPENAI_API_KEY,
-            base_url=OPENAI_BASE_URL,
+            api_key=self_api_key,
+            base_url=self_base_url,
         )
+        print(f"[GeneralLLMAgent] Initialized with Base URL: {self_base_url}, Key: {'Provided' if api_key else 'Default'}")
 
     def run(self, query: str) -> str:
         try:
             start_time = time.time()
+            # Ensure client is using the potentially updated base_url if it was re-init
+            # For openai client, base_url is set at init, so it's fine.
             stream = self.client.chat.completions.create(
-                model="gpt-3.5-turbo", # Or any other model available via your proxy
+                model="gpt-3.5-turbo",
                 messages=[
                     {"role": "system", "content": "You are a general helpful assistant."},
                     {"role": "user", "content": query}
                 ],
                 stream=True,
-                timeout=60 # 60 seconds timeout
+                timeout=60
             )
 
             response_content = []
@@ -55,7 +64,7 @@ class GeneralLLMAgent(BaseAgent):
 
             final_response = "".join(response_content)
             end_time = time.time()
-            print(f"[GeneralLLMAgent] Query: '{query[:50]}...' Response: '{final_response[:50]}...' Time: {end_time - start_time:.2f}s")
+            # print(f"[GeneralLLMAgent] Query: '{query[:50]}...' Response: '{final_response[:50]}...' Time: {end_time - start_time:.2f}s")
             return final_response if final_response else "抱歉，我无法回答这个问题（OpenAI API未返回有效内容）。"
 
         except openai.APIConnectionError as e:
@@ -67,7 +76,7 @@ class GeneralLLMAgent(BaseAgent):
         except openai.APIStatusError as e:
             print(f"[GeneralLLMAgent] OpenAI API Status Error: {e.status_code} - {e.response}")
             return f"抱歉，OpenAI API返回错误状态 {e.status_code}：{e.message}"
-        except openai.APIError as e: # Catch-all for other OpenAI errors
+        except openai.APIError as e:
             print(f"[GeneralLLMAgent] OpenAI API Error: {e}")
             return f"抱歉，调用OpenAI服务时发生错误：{e}"
         except Exception as e:
@@ -76,20 +85,29 @@ class GeneralLLMAgent(BaseAgent):
 
 class FineTunedAgent(BaseAgent):
     """模拟经过法律数据微调的智能体 (调用“好的智能体”API)"""
-    def __init__(self, name="微调后模型（特定API）"):
+    def __init__(self, name="微调后模型（特定API）", api_url: str = None, token: str = None):
         super().__init__(name)
-        self.api_url = GOOD_AGENT_API_URL
+        self.api_url = api_url if api_url else DEFAULT_GOOD_AGENT_API_URL
+        self_token = token if token else DEFAULT_GOOD_AGENT_TOKEN
+
+        if not self_token:
+            raise ValueError("FineTunedAgent token must be provided either as a parameter or as a default.")
+        if not self.api_url:
+            raise ValueError("FineTunedAgent API URL must be provided either as a parameter or as a default.")
+
         self.headers = {
-            "Authorization": f"Bearer {GOOD_AGENT_TOKEN}",
+            "Authorization": f"Bearer {self_token}",
             "Content-Type": "application/json"
         }
+        print(f"[FineTunedAgent] Initialized with API URL: {self.api_url}, Token: {'Provided' if token else 'Default'}")
+
 
     def run(self, query: str) -> str:
         payload = {
-            "chatId": f"chat_{random.randint(1000, 9999)}_{time.time_ns()}", # Unique chatId
+            "chatId": f"chat_{random.randint(1000, 9999)}_{time.time_ns()}",
             "stream": True,
             "detail": False,
-            "variables": { # Example variables, adjust if needed
+            "variables": {
                 "uid": "jules_evaluator",
                 "name": "Jules"
             },
@@ -101,16 +119,15 @@ class FineTunedAgent(BaseAgent):
         try:
             start_time = time.time()
             response = requests.post(
-                self.api_url,
-                headers=self.headers,
+                self.api_url, # Uses the potentially updated self.api_url
+                headers=self.headers, # Uses the potentially updated self.headers (if token changed)
                 json=payload,
                 stream=True,
-                timeout=60 # 60 seconds timeout
+                timeout=60
             )
-            response.raise_for_status()  # Raise an exception for HTTP errors (4xx or 5xx)
+            response.raise_for_status()
 
             response_content = []
-            # Read the stream line by line
             for line in response.iter_lines():
                 if line:
                     decoded_line = line.decode('utf-8')
@@ -128,12 +145,12 @@ class FineTunedAgent(BaseAgent):
                                 if chunk["choices"][0].get("finish_reason") == "stop":
                                     break
                         except json.JSONDecodeError as e:
-                            print(f"[FineTunedAgent] JSONDecodeError for line: '{json_str}', error: {e}")
-                            continue # Skip malformed JSON lines
+                            # print(f"[FineTunedAgent] JSONDecodeError for line: '{json_str}', error: {e}")
+                            continue
 
             final_response = "".join(response_content)
             end_time = time.time()
-            print(f"[FineTunedAgent] Query: '{query[:50]}...' Response: '{final_response[:50]}...' Time: {end_time - start_time:.2f}s")
+            # print(f"[FineTunedAgent] Query: '{query[:50]}...' Response: '{final_response[:50]}...' Time: {end_time - start_time:.2f}s")
             return final_response if final_response else "抱歉，我无法回答这个问题（特定API未返回有效内容）。"
 
         except requests.exceptions.Timeout as e:
@@ -145,28 +162,9 @@ class FineTunedAgent(BaseAgent):
         except requests.exceptions.HTTPError as e:
             print(f"[FineTunedAgent] API HTTP Error: {e.response.status_code} - {e.response.text}")
             return f"抱歉，特定API服务返回错误状态 {e.response.status_code}：{e.response.reason}"
-        except requests.exceptions.RequestException as e: # Catch-all for other requests errors
+        except requests.exceptions.RequestException as e:
             print(f"[FineTunedAgent] API Request Error: {e}")
             return f"抱歉，调用特定API服务时发生错误：{e}"
         except Exception as e:
             print(f"[FineTunedAgent] Unexpected error: {e}")
             return f"抱歉，处理请求时发生未知错误：{e}"
-
-# Example of how the old agents were (for reference, will be overwritten)
-# class OldGeneralLLMAgent(BaseAgent):
-#     """模拟通用大模型智能体 (未针对法律领域优化)"""
-#     def run(self, query: str) -> str:
-#         time.sleep(random.uniform(0.5, 1.5))
-#         if "诉讼时效" in query:
-#             return "诉讼时效就是打官司的时间限制，过期了就不能告了。"
-#         # ... other hardcoded responses
-#         return "抱歉，我无法回答这个问题。"
-
-# class OldFineTunedAgent(BaseAgent):
-#     """模拟经过法律数据微调的智能体"""
-#     def run(self, query: str) -> str:
-#         time.sleep(random.uniform(0.2, 0.8))
-#         if "诉讼时效" in query:
-#             return "诉讼时效是指权利人在法定期间内不行使权利，该期间届满后，权利不受法律保护的制度。"
-#         # ... other hardcoded responses
-#         return "抱歉，我无法回答这个问题。"
