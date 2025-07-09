@@ -15,7 +15,7 @@ st.set_page_config(
     layout="wide"
 )
 
-API_URL = "http://120.0.0.1:8000/evaluate" # corrected typo from 120 to 127
+API_URL = "http://127.0.0.1:8000/evaluate"
 
 st.title("⚖️ 法律智能体准确率评测仪表盘")
 st.caption("对比『通用大模型』与『法律领域微调模型』的表现 (成功标准基于相似度评分)")
