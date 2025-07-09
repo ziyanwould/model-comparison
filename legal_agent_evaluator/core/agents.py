@@ -37,7 +37,7 @@ class GeneralLLMAgent(BaseAgent):
         try:
             start_time = time.time()
             stream = self.client.chat.completions.create(
-                model="gpt-3.5-turbo", # Or any other model available via your proxy
+                model="gpt-4o-mini", # Or any other model available via your proxy
                 messages=[
                     {"role": "system", "content": "You are a general helpful assistant."},
                     {"role": "user", "content": query}

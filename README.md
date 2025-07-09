@@ -2,7 +2,7 @@
  * @Author: liujiarong 448736378@qq.com
  * @Date: 2025-07-09 17:11:52
  * @LastEditors: liujiarong 448736378@qq.com
- * @LastEditTime: 2025-07-09 17:21:13
+ * @LastEditTime: 2025-07-09 17:55:45
  * @FilePath: /model-comparison/README.md
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
 -->
@@ -22,7 +22,7 @@ Bash
 source venv/bin/activate
 激活后，您会看到命令行提示符前面出现了 (venv) 字样。
 
-
+pip install -r requirements.txt
 运行与体验
 请确保您处于已激活的 (venv) 虚拟环境中。
 
