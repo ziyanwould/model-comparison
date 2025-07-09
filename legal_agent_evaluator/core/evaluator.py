@@ -3,7 +3,7 @@ import json
 import re # For parsing the score from judge
 import openai # For potential OpenAI errors during judge call
 from typing import List, Dict, Optional
-from .agents import GeneralLLMAgent, FineTunedAgent # GeneralLLMAgent is now also our Judge
+from .agents import BaseAgent, GeneralLLMAgent, FineTunedAgent # GeneralLLMAgent is now also our Judge
 
 # --- Constants for Similarity Scoring ---
 SIMILARITY_THRESHOLD = 0.7 # Score >= threshold means is_success = True
