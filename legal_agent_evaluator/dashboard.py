@@ -25,9 +25,10 @@ use_custom_config = st.sidebar.checkbox("启用自定义API配置", key="use_cus
 default_session_state = {
     'gen_api_key': "", 'gen_base_url': "", 'gen_model_name': "",
     'ft_api_url': "", 'ft_token': "",
-    'streamed_results': [], # To store results as they stream in
-    'evaluation_complete': False, # Flag to indicate streaming is done
-    'active_evaluation_run': False # Flag to indicate an evaluation is ongoing
+    'streamed_results_log': [], # Stores raw log strings for display as they stream in
+    'final_eval_results': [], # Stores parsed result items for final report
+    'evaluation_complete': False,
+    'active_evaluation_run': False
 }
 for key, default_value in default_session_state.items():
     if key not in st.session_state:
@@ -43,15 +44,16 @@ with st.sidebar.expander("微调后模型 (特定API)", expanded=False):
     st.session_state.ft_token = st.text_input("特定API Token", value=st.session_state.ft_token, type="password", help="留空则使用后端默认配置")
 
 # --- Streaming Results Display Area ---
-# This area will show results as they stream in.
-# We use st.empty() to replace its content dynamically.
 streaming_results_placeholder = st.empty()
 
 # --- Main Interaction: Start Evaluation Button ---
 if st.button("🚀 开始评测", type="primary", disabled=st.session_state.active_evaluation_run):
-    st.session_state.streamed_results = [] # Clear previous streamed results
+    st.session_state.streamed_results_log = []
+    st.session_state.final_eval_results = []
     st.session_state.evaluation_complete = False
-    st.session_state.active_evaluation_run = True # Disable button during run
+    st.session_state.active_evaluation_run = True
+    streaming_results_placeholder.text_area("评测进度:", "初始化评测...", height=300, key="log_display_initial")
+
 
     payload = {}
     if use_custom_config:
@@ -63,96 +65,96 @@ if st.button("🚀 开始评测", type="primary", disabled=st.session_state.acti
         if custom_configs_dict:
             payload["custom_configs"] = custom_configs_dict
             st.sidebar.info("评测将使用自定义API配置.")
+            st.session_state.streamed_results_log.append("INFO: 评测将使用自定义API配置.")
         else:
             st.sidebar.warning("已勾选“启用自定义API配置”，但未填写任何有效的自定义API信息。将使用后端默认配置。")
+            st.session_state.streamed_results_log.append("WARN: 已勾选自定义配置但未提供有效信息，将使用默认配置。")
     else:
         st.sidebar.info("评测将使用后端默认API配置。")
+        st.session_state.streamed_results_log.append("INFO: 使用后端默认API配置。")
 
-    # Use a spinner for the entire duration of the streaming request
+    streaming_results_placeholder.text_area("评测进度:", "\n".join(st.session_state.streamed_results_log), height=300, key="log_display_setup")
+
     with st.spinner("评测进行中，结果将逐步显示... 请勿刷新页面。"):
-        current_results_display = [] # Temp list for display within this run
         try:
-            response = requests.post(API_URL, json=payload, stream=True, timeout=1800) # Long timeout for potentially many items
+            response = requests.post(API_URL, json=payload, stream=True, timeout=1800)
             response.raise_for_status()
 
             for line in response.iter_lines():
                 if line:
                     try:
                         decoded_line = line.decode('utf-8')
-                        result_item = json.loads(decoded_line)
+                        item = json.loads(decoded_line)
 
-                        # Check for system messages from the stream
-                        if result_item.get("type") == "system":
-                            # Display system message in a distinct way or log it
-                            # For now, add to a temporary display list or print to console
-                            current_results_display.append(f"SYSTEM: {result_item.get('message', '')} (Agent: {result_item.get('agent', 'N/A')})")
-                            if result_item.get("message") == "所有评测已完成。":
+                        if item.get("type") == "system":
+                            log_entry = f"SYSTEM: {item.get('message', '')} (Agent: {item.get('agent', 'N/A')})"
+                            st.session_state.streamed_results_log.append(log_entry)
+                            if item.get("message") == "所有评测已完成。":
                                 st.session_state.evaluation_complete = True
                         else: # It's a result item
-                            st.session_state.streamed_results.append(result_item)
-                            # Prepare a subset of info for real-time display
-                            display_item = (
-                                f"智能体: {result_item.get('智能体', 'N/A')}, "
-                                f"任务ID: {result_item.get('任务ID', 'N/A')}, "
-                                f"查询: {result_item.get('查询语句', '')[:30]}..., "
-                                f"成功: {result_item.get('是否成功', False)}, "
-                                f"得分: {result_item.get('相似度得分', '0.00')}"
+                            st.session_state.final_eval_results.append(item) # Store full result item
+                            # Prepare a simpler log entry for real-time display
+                            log_entry = (
+                                f"结果: 智能体: {item.get('智能体', 'N/A')}, "
+                                f"任务ID: {item.get('任务ID', 'N/A')}, "
+                                f"查询: {item.get('查询语句', '')[:20]}..., " # Shorter query
+                                f"成功: {item.get('是否成功', False)}, "
+                                f"得分: {item.get('相似度得分', '0.00')}"
                             )
-                            current_results_display.append(display_item)
+                            st.session_state.streamed_results_log.append(log_entry)
 
-                        # Update the placeholder with the latest set of messages/results
-                        # Displaying as a simple list of strings for now
+                        # Update the placeholder with the latest log messages
+                        # The key change is important if we want st.empty to replace content reliably without rerun
                         streaming_results_placeholder.text_area(
-                            "评测进度 (逐条结果):",
-                            "\n".join(current_results_display),
+                            "评测进度:",
+                            "\n".join(st.session_state.streamed_results_log),
                             height=300,
-                            key=f"stream_display_{len(current_results_display)}" # Key to force update
+                            key=f"log_update_{len(st.session_state.streamed_results_log)}"
                         )
                     except json.JSONDecodeError:
-                        print(f"Warning: Could not decode JSON line: {decoded_line}")
-                        current_results_display.append(f"错误: 无法解析的日志行: {decoded_line[:100]}")
-                        streaming_results_placeholder.text_area("评测进度:", "\n".join(current_results_display), height=300)
-                    except Exception as e_inner: # Catch other errors during line processing
-                        print(f"Error processing streamed line: {e_inner}")
-                        current_results_display.append(f"错误: 处理流数据时出错 - {str(e_inner)[:100]}")
-                        streaming_results_placeholder.text_area("评测进度:", "\n".join(current_results_display), height=300)
+                        err_log = f"错误: 无法解析的日志行: {decoded_line[:100]}"
+                        st.session_state.streamed_results_log.append(err_log)
+                        streaming_results_placeholder.text_area("评测进度:", "\n".join(st.session_state.streamed_results_log), height=300)
+                    except Exception as e_inner:
+                        err_log = f"错误: 处理流数据时出错 - {str(e_inner)[:100]}"
+                        st.session_state.streamed_results_log.append(err_log)
+                        streaming_results_placeholder.text_area("评测进度:", "\n".join(st.session_state.streamed_results_log), height=300)
 
-            if not st.session_state.evaluation_complete: # If stream ended without explicit completion message
-                st.session_state.evaluation_complete = True # Assume completion if stream ends
-                current_results_display.append("SYSTEM: 后端数据流已结束。")
-                streaming_results_placeholder.text_area("评测进度:", "\n".join(current_results_display), height=300)
+            if not st.session_state.evaluation_complete:
+                st.session_state.streamed_results_log.append("SYSTEM: 后端数据流已结束。")
+                st.session_state.evaluation_complete = True
 
-            st.success("评测数据流接收完毕！正在生成最终报告...")
+            streaming_results_placeholder.text_area("评测进度:", "\n".join(st.session_state.streamed_results_log), height=300) # Final update to log display
+            st.success("评测数据流接收完毕！正在处理最终报告...") # This will show up
 
         except requests.exceptions.RequestException as e:
             st.error(f"请求后端服务时发生错误: {e}")
-            st.session_state.streamed_results = [] # Clear on error
-        except Exception as e_outer: # Catch other unexpected errors
+            st.session_state.streamed_results_log.append(f"ERROR: 请求后端服务时发生错误: {e}")
+            st.session_state.evaluation_complete = True # Mark as complete to allow report gen (even if empty)
+        except Exception as e_outer:
             st.error(f"评测过程中发生未知错误: {e_outer}")
-            st.session_state.streamed_results = []
+            st.session_state.streamed_results_log.append(f"ERROR: 评测过程中发生未知错误: {e_outer}")
+            st.session_state.evaluation_complete = True
         finally:
-            st.session_state.active_evaluation_run = False # Re-enable button
-            # Force a final rerun to ensure the 'evaluation_complete' state is processed for report generation
-            st.experimental_rerun()
-
+            st.session_state.active_evaluation_run = False
+            # No st.experimental_rerun() here. UI will update on next natural Streamlit cycle or interaction.
 
 # --- Final Results Display Area (triggered after streaming is complete) ---
-if st.session_state.evaluation_complete and st.session_state.streamed_results:
-    results_df = pd.DataFrame(st.session_state.streamed_results)
-
-    # Filter out any system messages if they were accidentally added to streamed_results
-    # (though current logic tries to put them in current_results_display for live view only)
-    if "type" in results_df.columns: # Assuming system messages have a 'type' field
-        results_df = results_df[results_df["type"] != "system"]
+# This block will execute when Streamlit reruns the script AND evaluation_complete is True
+if st.session_state.evaluation_complete and st.session_state.final_eval_results:
+    results_df = pd.DataFrame(st.session_state.final_eval_results)
 
     if not results_df.empty:
-        streaming_results_placeholder.empty() # Clear the streaming display area
+        # It's better to clear or hide the streaming placeholder once final report is ready.
+        # However, st.empty() needs to be called in the same script run path.
+        # For now, let's just write the final report below it.
+        # streaming_results_placeholder.empty() # This might not work as expected without rerun
+
         st.header("📊 最终评测报告")
         st.caption(f"成功标准：相似度得分 >= {SIMILARITY_THRESHOLD:.1f} (由裁判模型评估)")
 
         if '智能体' in results_df.columns and '是否成功' in results_df.columns:
             try:
-                # Ensure '是否成功' is boolean for calculations
                 results_df['是否成功'] = results_df['是否成功'].astype(bool)
                 success_rate = results_df.groupby('智能体')['是否成功'].mean().reset_index()
                 success_rate['成功率'] = success_rate['是否成功'] * 100
@@ -188,10 +190,10 @@ if st.session_state.evaluation_complete and st.session_state.streamed_results:
                 if bad_cases_df.empty: st.success("太棒了！没有发现失败案例。")
                 else: st.dataframe(bad_cases_df[columns_to_show] if columns_to_show else bad_cases_df)
             else: st.warning("评测结果数据中缺少 '是否成功' 列。")
-    else:
-        st.info("未生成有效的评测数据用于最终报告。")
+    else: # if results_df is empty but evaluation was marked complete
+        st.info("评测完成，但未生成有效的评测数据用于最终报告。请检查流式日志获取更多信息。")
 
-elif not st.session_state.active_evaluation_run: # If no eval running and no results yet
+elif not st.session_state.active_evaluation_run:
      st.info("点击“开始评测”以查看结果。")
 
 st.sidebar.markdown("---")
