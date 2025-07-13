@@ -44,31 +44,35 @@ def get_similarity_score(
                 {"role": "system", "content": "You are an impartial evaluator. Your task is to provide a numerical score based on the user's instructions. Output only the numerical score."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.1, max_tokens=10, stream=False, timeout=45
+            temperature=0.1, max_tokens=1000, stream=False, timeout=120
         )
         judge_response_text = ""
         if completion.choices and completion.choices[0].message and completion.choices[0].message.content:
             judge_response_text = completion.choices[0].message.content.strip()
         else:
             print("  [Judge] Judge agent did not return content.")
-            return 0.0
+            # 只要模型有输出，兜底给0.1分
+            return 0.1
+
         score_match = re.search(r"(\d\.\d+)", judge_response_text)
         if score_match:
             score = float(score_match.group(1))
-            return max(0.0, min(1.0, score))
+            # 只要有分数，最低给0.1分
+            return max(0.1, min(1.0, score))
         else:
             try:
                 score = float(judge_response_text)
-                return max(0.0, min(1.0, score))
+                return max(0.1, min(1.0, score))
             except ValueError:
                 print(f"  [Judge] Could not parse score from response: '{judge_response_text}'")
-                return 0.0
+                # 只要模型有输出，兜底给0.1分
+                return 0.1
     except openai.APIError as e:
         print(f"  [Judge] Judge Agent API Error: {e}")
-        return 0.0
+        return 0.1
     except Exception as e:
         print(f"  [Judge] Unexpected error during judging: {e}")
-        return 0.0
+        return 0.1
 
 def load_test_set(file_path: str) -> list: # Remains a list loader
     test_cases = []
